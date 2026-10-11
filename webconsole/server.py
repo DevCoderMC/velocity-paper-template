@@ -180,7 +180,7 @@ def stop_all():
 
 def state():
     return {"servers": [s.snapshot() for s in SERVERS],
-            "console": {"host": HOST, "port": PORT}}
+            "console": {"host": HOST, "port": PORT, "pid": os.getpid()}}
 
 
 class Handler(BaseHTTPRequestHandler):
