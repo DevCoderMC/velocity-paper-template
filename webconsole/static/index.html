@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MC Web-Konsole</title>
+<style>
+  :root {
+    --bg: #12151c; --bg2: #1a1f29; --bg3: #232a36;
+    --line: #2c3444; --fg: #d7dee8; --muted: #8b97a8;
+    --accent: #35b6a8; --accent2: #3f8cff;
+    --green: #3fbf6f; --yellow: #e0b341; --orange: #e08a3c; --grey: #5b6675;
+    --mono: ui-monospace, SFMono-Regular, "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 system-ui, "Segoe UI", Ubuntu, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+  header h1 span { color: var(--accent); }
+  header .spacer { flex: 1; }
+  button {
+    background: var(--bg3); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #234; border-color: var(--accent); }
+  #conn { font-size: 12px; color: var(--muted); }
+  #conn.ok::before  { content: "● "; color: var(--green); }
+  #conn.bad::before { content: "● "; color: #e05c5c; }
+
+  nav { display: flex; gap: 4px; padding: 8px 16px 0; background: var(--bg2); }
+  nav button {
+    border: 1px solid transparent; border-bottom: none;
+    border-radius: 8px 8px 0 0; background: transparent; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+  }
+  nav button.active { background: var(--bg); color: var(--fg); border-color: var(--line); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--grey); }
+  .p-stopped  .dot, .dot.p-stopped  { background: var(--grey); }
+  .p-starting .dot, .dot.p-starting { background: var(--yellow); }
+  .p-ready    .dot, .dot.p-ready    { background: var(--green); }
+  .p-stopping .dot, .dot.p-stopping { background: var(--orange); }
+  nav small { color: var(--muted); }
+
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 16px 16px; }
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 0;
+  }
+  .badge { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+  .toolbar .spacer { flex: 1; }
+  label.chk { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+
+  #console {
+    flex: 1; min-height: 0; overflow-y: auto; margin: 0;
+    background: #0c0f14; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word; color: #c6d0dd;
+  }
+  #console .cmd { color: var(--accent2); }
+  #console .sep { color: var(--muted); }
+  #console .err { color: #ff8080; }
+  #console .join { color: var(--green); }
+  #console .leave { color: var(--orange); }
+
+  form#cmdForm { display: flex; gap: 8px; margin-top: 10px; }
+  #cmdInput {
+    flex: 1; background: var(--bg3); border: 1px solid var(--line); color: var(--fg);
+    border-radius: 6px; padding: 9px 12px; font-family: var(--mono); font-size: 13px;
+  }
+  #cmdInput:focus { outline: none; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>MC <span>Web-Konsole</span></h1>
+  <div class="spacer"></div>
+  <span id="conn">verbinde …</span>
+  <button id="startAll" class="primary">Alle starten</button>
+  <button id="stopAll">Alle stoppen</button>
+</header>
+
+<nav id="tabs"></nav>
+
+<main>
+  <div class="toolbar">
+    <span class="badge" id="srvBadge"><span class="dot"></span><span id="srvState">–</span></span>
+    <span class="badge" id="srvInfo"></span>
+    <div class="spacer"></div>
+    <label class="chk"><input type="checkbox" id="autoscroll" checked> Autoscroll</label>
+    <button id="clearBtn">Leeren</button>
+    <button id="restartBtn">Neustart</button>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn">Stop</button>
+  </div>
+  <pre id="console"></pre>
+  <form id="cmdForm" autocomplete="off">
+    <input id="cmdInput" placeholder="Befehl eingeben und Enter drücken …" autocomplete="off" spellcheck="false">
+    <button type="submit">Senden</button>
+  </form>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const PHASE = {
+  stopped:  { label: "gestoppt", cls: "p-stopped" },
+  starting: { label: "startet …", cls: "p-starting" },
+  ready:    { label: "läuft",    cls: "p-ready" },
+  stopping: { label: "stoppt …", cls: "p-stopping" },
+};
+
+let servers = [];
+let active = null;
+let loopToken = 0;
+const seq = {};
+const history = {};
+let histIdx = {};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function api(path, body) {
+  const opt = body === undefined
+    ? {}
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opt);
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+function setConn(ok) {
+  const c = $("#conn");
+  c.textContent = ok ? "verbunden" : "getrennt";
+  c.className = ok ? "ok" : "bad";
+}
+
+function byName(name) { return servers.find((s) => s.name === name); }
+
+function renderTabs() {
+  const nav = $("#tabs");
+  nav.innerHTML = "";
+  for (const s of servers) {
+    const b = document.createElement("button");
+    b.className = "p-" + s.phase + (s.name === active ? " active" : "");
+    b.innerHTML = `<span class="dot"></span><span>${s.name}</span><small>${s.port}</small>`;
+    b.onclick = () => openTab(s.name);
+    nav.appendChild(b);
+  }
+}
+
+function renderToolbar() {
+  const s = byName(active);
+  if (!s) return;
+  const ph = PHASE[s.phase] || PHASE.stopped;
+  $("#srvBadge").className = "badge " + ph.cls;
+  $("#srvState").textContent = ph.label;
+  $("#srvInfo").textContent = `${s.role} · Port ${s.port}` + (s.pid ? ` · PID ${s.pid}` : "");
+  const busy = s.phase === "starting" || s.phase === "stopping";
+  $("#startBtn").disabled = s.phase === "ready" || s.phase === "starting";
+  $("#stopBtn").disabled = s.phase === "stopped" || s.phase === "stopping";
+  $("#restartBtn").disabled = busy;
+}
+
+function appendLine(text) {
+  const box = $("#console");
+  const el = document.createElement("div");
+  el.textContent = text;
+  if (text.startsWith("> ")) el.className = "cmd";
+  else if (text.startsWith("---")) el.className = "sep";
+  else if (text.includes("!!") || /\bERROR\b/.test(text)) el.className = "err";
+  else if (/joined the game/.test(text)) el.className = "join";
+  else if (/left the game/.test(text)) el.className = "leave";
+  box.appendChild(el);
+  if ($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
+}
+
+function openTab(name) {
+  active = name;
+  loopToken += 1;
+  seq[name] = 0;
+  $("#console").innerHTML = "";
+  renderTabs();
+  renderToolbar();
+  logLoop(name, loopToken);
+}
+
+async function logLoop(name, token) {
+  while (token === loopToken) {
+    try {
+      const d = await api(`/api/logs?server=${encodeURIComponent(name)}&after=${seq[name] || 0}&timeout=20`);
+      if (token !== loopToken) return;
+      setConn(true);
+      for (const l of d.lines) { seq[name] = l.seq; appendLine(l.text); }
+      const s = byName(name);
+      if (s && s.phase !== d.phase) { s.phase = d.phase; renderToolbar(); renderTabs(); }
+    } catch (e) {
+      if (token !== loopToken) return;
+      setConn(false);
+      await sleep(1000);
+    }
+  }
+}
+
+async function refreshState() {
+  try {
+    const d = await api("/api/state");
+    servers = d.servers;
+    if (!active) { renderTabs(); openTab(servers[0].name); }
+    else { renderTabs(); renderToolbar(); }
+    setConn(true);
+  } catch (e) {
+    setConn(false);
+  }
+}
+
+async function action(kind, server) {
+  await api(`/api/${kind}`, { server });
+  setTimeout(refreshState, 300);
+}
+
+async function all(kind) {
+  await api(`/api/${kind}`, {});
+  setTimeout(refreshState, 500);
+}
+
+async function sendCommand(cmd) {
+  const text = cmd.trim();
+  if (!text || !active) return;
+  (history[active] = history[active] || []).push(text);
+  histIdx[active] = history[active].length;
+  try { await api("/api/command", { server: active, command: text }); }
+  catch (e) { appendLine("!! Befehl konnte nicht gesendet werden"); }
+}
+
+$("#startBtn").onclick = () => action("start", active);
+$("#stopBtn").onclick = () => action("stop", active);
+$("#restartBtn").onclick = () => action("restart", active);
+$("#clearBtn").onclick = () => { $("#console").innerHTML = ""; };
+$("#startAll").onclick = () => all("start-all");
+$("#stopAll").onclick = () => all("stop-all");
+
+$("#cmdForm").onsubmit = (e) => {
+  e.preventDefault();
+  const input = $("#cmdInput");
+  sendCommand(input.value);
+  input.value = "";
+};
+
+$("#cmdInput").addEventListener("keydown", (e) => {
+  const hist = history[active] || [];
+  if (e.key === "ArrowUp" && hist.length) {
+    e.preventDefault();
+    histIdx[active] = Math.max(0, (histIdx[active] ?? hist.length) - 1);
+    $("#cmdInput").value = hist[histIdx[active]] || "";
+  } else if (e.key === "ArrowDown" && hist.length) {
+    e.preventDefault();
+    histIdx[active] = Math.min(hist.length, (histIdx[active] ?? hist.length) + 1);
+    $("#cmdInput").value = hist[histIdx[active]] || "";
+  }
+});
+
+refreshState();
+setInterval(refreshState, 3000);
+</script>
+</body>
+</html>

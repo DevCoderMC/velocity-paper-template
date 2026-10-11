@@ -1,0 +1,36 @@
+# Server-Jars werden mit ./download.sh geladen und nicht eingecheckt.
+**/*.jar
+
+# Welten und Spielerdaten
+**/world/
+**/world_nether/
+**/world_the_end/
+**/usercache.json
+**/ops.json
+**/whitelist.json
+**/banned-ips.json
+**/banned-players.json
+**/version_history.json
+
+# Laufzeitdaten
+**/logs/
+**/cache/
+**/libraries/
+**/versions/
+**/.console_history
+**/session.lock
+**/uid.dat
+*.log
+*.log.gz
+
+# Plugin-Laufzeitdaten (Konfigordner); Plugin-Jars siehe oben
+/lobby/plugins/*/
+/smp/plugins/*/
+/velocity/plugins/*/
+
+# Von Velocity beim ersten Start generierte Standard-Sprachdateien
+/velocity/lang/
+
+# Web-Konsole
+/webconsole/logs/
+/webconsole/webconsole.pid
