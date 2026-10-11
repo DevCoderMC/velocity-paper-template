@@ -31,6 +31,10 @@
 # Von Velocity beim ersten Start generierte Standard-Sprachdateien
 /velocity/lang/
 
+# Python
+__pycache__/
+*.pyc
+
 # Web-Konsole
 /webconsole/logs/
 /webconsole/webconsole.pid
